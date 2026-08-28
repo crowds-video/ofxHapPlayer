@@ -33,15 +33,42 @@
 #include <ofxHap/Clock.h>
 #include <ofxHap/PacketCache.h>
 #include <ofxHap/Demuxer.h>
-#include <ofxHap/AudioThread.h>
 #include <ofxHap/TimeRangeSet.h>
 
+/*
+ OFX_HAP_NO_AUDIO
+
+ Define this to compile the player without any audio support. Every audio
+ stream in a movie is then ignored: no AudioThread (and so no decoder thread),
+ no RingBuffer, and — the reason this switch exists — no ofSoundStream.
+
+ ofxHapPlayer opens one ofSoundStream *per instance* with a 128-frame buffer.
+ That is fine for the one-or-two-player case the addon was written for, but an
+ application that keeps a pool of players (a video wall, a grid) would open one
+ CoreAudio/ASIO output per cell and fall over. With this defined the player is
+ video-only and instances are cheap.
+
+ setVolume()/getVolume() still compile and still store the value, so calling
+ code needs no #ifdefs; the value simply has nothing to act on.
+ */
+#define OFX_HAP_NO_AUDIO
+
 namespace ofxHap {
+#if !defined(OFX_HAP_NO_AUDIO)
     class AudioThread;
+#endif
     class RingBuffer;
 }
 
-class ofxHapPlayer : public ofBaseVideoPlayer, public ofxHap::PacketReceiver, public ofxHap::AudioThread::Receiver {
+#if !defined(OFX_HAP_NO_AUDIO)
+#include <ofxHap/AudioThread.h>
+#endif
+
+class ofxHapPlayer : public ofBaseVideoPlayer, public ofxHap::PacketReceiver
+#if !defined(OFX_HAP_NO_AUDIO)
+    , public ofxHap::AudioThread::Receiver
+#endif
+{
 public:
     ofxHapPlayer();
     virtual ~ofxHapPlayer();
@@ -62,6 +89,15 @@ public:
     virtual const ofPixels&     getPixels() const override;
 
     virtual ofTexture *         getTexture();
+    /*
+     ofBaseVideoPlayer's hook for direct-to-texture rendering. ofVideoPlayer (and
+     anything else driving an ofBaseVideoPlayer generically) calls this, not
+     getTexture(), and the base returns nullptr — so without this override such a
+     wrapper falls back to the pixel path, which this player does not implement.
+     Delegates to getTexture() rather than returning &_texture, because that is
+     where the pending frame is uploaded.
+     */
+    virtual ofTexture *         getTexturePtr() override;
     virtual ofShader *          getShader();
     virtual float               getWidth() const override;
     virtual float               getHeight() const override;
@@ -118,8 +154,10 @@ private:
     virtual void    discontinuity() override;
     virtual void    endMovie() override;
     virtual void    error(int averror) override;
+#if !defined(OFX_HAP_NO_AUDIO)
     virtual void    startAudio() override;
     virtual void    stopAudio() override;
+#endif
     void            setPaused(bool pause, bool locked);
     void            setVideoPTSLoaded(int64_t pts, bool round_up);
     void            setPTSLoaded(int64_t pts);
@@ -127,6 +165,7 @@ private:
     void            update(ofEventArgs& args);
     void            updatePTS();
     void            read(ofxHap::TimeRangeSequence& sequence);
+#if !defined(OFX_HAP_NO_AUDIO)
     class AudioOutput : public ofBaseSoundOutput {
     public:
         AudioOutput();
@@ -144,6 +183,7 @@ private:
         std::shared_ptr<ofxHap::RingBuffer> _buffer;
         ofSoundStream                       _soundStream;
     };
+#endif
     class DecodedFrame {
     public:
         DecodedFrame();
@@ -159,7 +199,9 @@ private:
     bool                _loaded;
     std::string         _error;
     AVStream            *_videoStream;
+#if !defined(OFX_HAP_NO_AUDIO)
     int                 _audioStreamIndex;
+#endif
     DecodedFrame        _decodedFrame;
     ofxHap::Clock       _clock;
     uint64_t            _frameTime;
@@ -171,9 +213,11 @@ private:
     ofxHap::TimeRangeSet _active;
     ofxHap::LockingPacketCache              _videoPackets;
     std::shared_ptr<ofxHap::Demuxer>        _demuxer;
+#if !defined(OFX_HAP_NO_AUDIO)
     std::shared_ptr<ofxHap::RingBuffer>     _buffer;
     std::shared_ptr<ofxHap::AudioThread>   _audioThread;
     AudioOutput         _audioOut;
+#endif
     float               _volume;
     std::chrono::microseconds               _timeout;
     float               _positionOnLoad;

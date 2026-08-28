@@ -140,7 +140,7 @@ linux:
 	ADDON_LDFLAGS = -lsnappy
 
 osx:
-	ADDON_LDFLAGS = -rpath @loader_path/../../../../../../../addons/ofxHapPlayer/libs
+	ADDON_LDFLAGS = -Xlinker -rpath -Xlinker @executable_path
 	ADDON_INCLUDES_EXCLUDE = libs/ffmpeg/include/libavformat
 	ADDON_INCLUDES_EXCLUDE += libs/ffmpeg/include/libavutil
 	ADDON_INCLUDES_EXCLUDE += libs/ffmpeg/include/libavcodec

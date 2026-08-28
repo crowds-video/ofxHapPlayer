@@ -1,1 +1,1 @@
-ofxHapPlayer
+../../ofxHapPlayer

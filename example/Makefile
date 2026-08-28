@@ -6,7 +6,7 @@ endif
 
 # make sure the the OF_ROOT location is defined
 ifndef OF_ROOT
-	OF_ROOT=$(realpath ../../..)
+	OF_ROOT=/Users/roy/Desktop/PROYECTOS/CROWDS/CROWDS_DEV/openFrameworks_v0.12.1_osx_release
 endif
 
 # call the project makefile!

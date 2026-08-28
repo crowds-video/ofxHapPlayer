@@ -33,13 +33,17 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 #include "ofxHapPlayer.h"
 #include <ofxHap/Common.h>
+#if !defined(OFX_HAP_NO_AUDIO)
 #include <ofxHap/AudioThread.h>
 #include <ofxHap/RingBuffer.h>
+#endif
 #include <ofxHap/MovieTime.h>
 extern "C" {
 #include <libavformat/avformat.h>
 #include <libavutil/time.h>
+#if !defined(OFX_HAP_NO_AUDIO)
 #include <libswresample/swresample.h>
+#endif
 #include <hap.h>
 }
 #if defined(TARGET_WINVS)
@@ -151,9 +155,17 @@ namespace ofxHapPY {
 // 3. Pause in palindrome(low priority)
 
 ofxHapPlayer::ofxHapPlayer() :
-    _loaded(false), _videoStream(nullptr), _audioStreamIndex(-1), _frameTime(av_gettime_relative()), _playing(false),
+    _loaded(false), _videoStream(nullptr),
+#if !defined(OFX_HAP_NO_AUDIO)
+    _audioStreamIndex(-1),
+#endif
+    _frameTime(av_gettime_relative()), _playing(false),
     _wantsUpload(false),
-    _demuxer(), _buffer(nullptr), _audioThread(nullptr), _audioOut(), _volume(1.0), _timeout(30000),
+    _demuxer(),
+#if !defined(OFX_HAP_NO_AUDIO)
+    _buffer(nullptr), _audioThread(nullptr), _audioOut(),
+#endif
+    _volume(1.0), _timeout(30000),
     _positionOnLoad(0.0)
 {
     _clock.setPausedAt(true, 0);
@@ -223,6 +235,7 @@ void ofxHapPlayer::foundStream(AVStream *stream)
     {
         _videoStream = stream;
     }
+#if !defined(OFX_HAP_NO_AUDIO)
     else if (type == AVMEDIA_TYPE_AUDIO)
     {
         // We will output silence until we have samples to play
@@ -249,6 +262,7 @@ void ofxHapPlayer::foundStream(AVStream *stream)
         _audioThread->setVolume(_volume);
         _audioThread->sync(_clock, false);
     }
+#endif
 }
 
 void ofxHapPlayer::foundAllStreams()
@@ -265,30 +279,36 @@ void ofxHapPlayer::readPacket(AVPacket *packet)
     {
         _videoPackets.store(packet);
     }
+#if !defined(OFX_HAP_NO_AUDIO)
     else if (_audioThread && packet->stream_index == _audioStreamIndex)
     {
         _audioThread->send(packet);
     }
+#endif
 }
 
 void ofxHapPlayer::discontinuity()
 {
     // No need to lock
     _videoPackets.cache();
+#if !defined(OFX_HAP_NO_AUDIO)
     if (_audioThread)
     {
         _audioThread->flush();
     }
+#endif
 }
 
 void ofxHapPlayer::endMovie()
 {
     // No need to lock
+#if !defined(OFX_HAP_NO_AUDIO)
     if (_audioThread)
     {
         // signal end of stream
         _audioThread->endOfStream();
     }
+#endif
 }
 
 void ofxHapPlayer::error(int averror)
@@ -308,15 +328,26 @@ void ofxHapPlayer::close()
 {
     std::lock_guard<std::mutex> guard(_lock);
     _demuxer.reset();
+#if !defined(OFX_HAP_NO_AUDIO)
     _audioThread.reset();
     _audioOut.close();
     _buffer.reset();
+#endif
     _videoPackets.clear();
     _clock.period = 0;
+    // Reset the playhead, not just the period. setPausedAt() is a no-op when the
+    // clock is already paused -- which it always is here, because stop() pauses
+    // before close() runs -- so without this _time keeps the *previous* movie's
+    // position. Loading a shorter movie next then leaves _time > period, and the
+    // next updatePTS() trips its assert. A player that is reused for a queue of
+    // clips of differing lengths hits this on the first shorter one.
+    _clock.syncAt(0, 0);
     _clock.setPausedAt(true, 0);
     _wantsUpload = false;
     _videoStream = nullptr;
+#if !defined(OFX_HAP_NO_AUDIO)
     _audioStreamIndex = -1;
+#endif
     _shader.unload();
     _texture.clear();
     _decodedFrame.clear();
@@ -601,6 +632,13 @@ ofTexture* ofxHapPlayer::getTexture()
     return &_texture;
 }
 
+ofTexture *ofxHapPlayer::getTexturePtr()
+{
+    // getTexture() takes _lock and performs the pending upload, so delegate to
+    // it rather than handing back a possibly-stale &_texture.
+    return getTexture();
+}
+
 ofShader *ofxHapPlayer::getShader()
 {
     std::lock_guard<std::mutex> guard(_lock);
@@ -659,10 +697,12 @@ void ofxHapPlayer::play()
     if (_clock.getDone())
     {
         _clock.syncAt(0, _frameTime);
+#if !defined(OFX_HAP_NO_AUDIO)
         if (_audioThread)
         {
             _audioThread->sync(_clock, false);
         }
+#endif
     }
     if (_clock.getPaused())
     {
@@ -693,10 +733,12 @@ void ofxHapPlayer::setPaused(bool pause, bool locked)
             _playing = true;
         }
         _clock.setPausedAt(pause, _frameTime);
+#if !defined(OFX_HAP_NO_AUDIO)
         if (_audioThread)
         {
             _audioThread->sync(_clock, true);
         }
+#endif
     }
 }
 
@@ -812,10 +854,12 @@ void ofxHapPlayer::setLoopState(ofLoopType state)
     if (mode != _clock.mode)
     {
         _clock.mode = mode;
+#if !defined(OFX_HAP_NO_AUDIO)
         if (_audioThread)
         {
             _audioThread->sync(_clock, false);
         }
+#endif
     }
 }
 
@@ -842,10 +886,12 @@ void ofxHapPlayer::setSpeed(float speed)
 {
     std::lock_guard<std::mutex> guard(_lock);
     _clock.setRateAt(speed, _frameTime);
+#if !defined(OFX_HAP_NO_AUDIO)
     if (_audioThread)
     {
         _audioThread->sync(_clock, true);
     }
+#endif
 }
 
 float ofxHapPlayer::getDuration() const
@@ -902,10 +948,12 @@ void ofxHapPlayer::setVideoPTSLoaded(int64_t pts, bool round_up)
 void ofxHapPlayer::setPTSLoaded(int64_t pts)
 {
     _clock.syncAt(pts, _frameTime);
+#if !defined(OFX_HAP_NO_AUDIO)
     if (_audioThread)
     {
         _audioThread->sync(_clock, false);
     }
+#endif
 }
 
 void ofxHapPlayer::firstFrame()
@@ -955,8 +1003,10 @@ void ofxHapPlayer::setVolume(float volume)
     {
         std::lock_guard<std::mutex> guard(_lock);
         _volume = ofClamp(volume, 0.0, 1.0);
+#if !defined(OFX_HAP_NO_AUDIO)
         if (_audioThread)
             _audioThread->setVolume(_volume);
+#endif
     }
 }
 
@@ -1008,6 +1058,7 @@ void ofxHapPlayer::setTimeout(int microseconds)
     _timeout = std::chrono::microseconds(microseconds);
 }
 
+#if !defined(OFX_HAP_NO_AUDIO)
 ofxHapPlayer::AudioOutput::AudioOutput()
 : _started(false), _channels(0), _sampleRate(0)
 {
@@ -1136,6 +1187,7 @@ void ofxHapPlayer::stopAudio()
 {
     _audioOut.stop();
 }
+#endif // !OFX_HAP_NO_AUDIO
 
 ofxHapPlayer::DecodedFrame::DecodedFrame() :
     pts(AV_NOPTS_VALUE), duration(0)
