@@ -432,6 +432,17 @@ void ofxHapPlayer::update(ofEventArgs & args)
     {
         vidPosition = av_rescale_q_rnd(pts, { 1, AV_TIME_BASE }, _videoStream->time_base, AV_ROUND_DOWN);
     }
+    // A position before the track's first frame shows that first frame, rather
+    // than nothing. A video track rarely starts at exactly 0 — an ffmpeg-muxed
+    // .mov typically puts its first frame a fraction of a frame in (eg pts 505
+    // in a 191k timescale, ~2.6ms) — so a player parked at 0, which is what a
+    // freshly loaded or rewound one is, fell into the invalidate branch below
+    // and never decoded a frame at all: no frame, no texture, nothing to draw
+    // until playback passed the start time.
+    if (_videoStream->start_time != AV_NOPTS_VALUE && vidPosition < _videoStream->start_time)
+    {
+        vidPosition = _videoStream->start_time;
+    }
     // No frame if the movie position outlies the video track length
     if (vidPosition > _videoStream->duration || (_videoStream->start_time != AV_NOPTS_VALUE && vidPosition < _videoStream->start_time))
     {
