@@ -383,12 +383,30 @@ void ofxHapPlayer::read(ofxHap::TimeRangeSequence& sequence)
 
 void ofxHapPlayer::update()
 {
-    ofEventArgs args;
-    update(args);
+//    ofEventArgs args;
+//    update(args);
+    update(false);
 }
 
 void ofxHapPlayer::update(ofEventArgs & args)
 {
+    update(false);
+}
+
+std::string hapResultToString(int hapResult){
+    switch(hapResult){
+        case HapResult_No_Error: return "HapResult_No_Error";
+        case HapResult_Bad_Arguments: return "HapResult_Bad_Arguments";
+        case HapResult_Buffer_Too_Small: return "HapResult_Buffer_Too_Small";
+        case HapResult_Bad_Frame: return "HapResult_Bad_Frame";
+        case HapResult_Internal_Error: return "HapResult_Internal_Error";
+        default: return "";
+    }
+    return "";
+}
+
+void ofxHapPlayer::update(bool bLog){
+    
     std::lock_guard<std::mutex> guard(_lock);
 
     // Calculate our current position for video and audio (if present)
@@ -396,6 +414,9 @@ void ofxHapPlayer::update(ofEventArgs & args)
 
     if (!_loaded)
     {
+        if(bLog){
+            ofLogNotice("ofxHapPlayer::update") << "not loaded";
+        }
         return;
     }
 
@@ -444,8 +465,11 @@ void ofxHapPlayer::update(ofEventArgs & args)
         vidPosition = _videoStream->start_time;
     }
     // No frame if the movie position outlies the video track length
-    if (vidPosition > _videoStream->duration || (_videoStream->start_time != AV_NOPTS_VALUE && vidPosition < _videoStream->start_time))
+    if (vidPosition > _videoStream->duration)
     {
+        if(bLog){
+            ofLogNotice("ofxHapPlayer::update", "invalid video position %d  duration: %d  startime: %d noptsVal: %s",  vidPosition, _videoStream->duration, _videoStream->start_time, ((_videoStream->start_time == AV_NOPTS_VALUE)?"true":"false"));
+        }
         _decodedFrame.invalidate();
     }
     else
@@ -454,6 +478,9 @@ void ofxHapPlayer::update(ofEventArgs & args)
         bool inBuffer = (_decodedFrame.isValid() && _decodedFrame.pts <= vidPosition && _decodedFrame.pts + _decodedFrame.duration > vidPosition) ? true : false;
         if (!inBuffer)
         {
+            if(bLog){
+                ofLogNotice("ofxHapPlayer::update") << "retreiving frame...";
+            }
             AVPacket *packet = av_packet_alloc();
             packet->data = NULL;
             packet->size = 0;
@@ -477,6 +504,9 @@ void ofxHapPlayer::update(ofEventArgs & args)
                     if (hapResult == HapResult_No_Error && !ofxHapPY::frameMatchesStream(textureFormat, _videoStream->codec->codec_tag))
 #endif
                     {
+                        if(bLog){
+                            ofLogNotice("ofxHapPlayer::update") << "Frame does not match stream";
+                        }
                         hapResult = HapResult_Bad_Frame;
                     }
                     if (hapResult == HapResult_No_Error)
@@ -515,9 +545,16 @@ void ofxHapPlayer::update(ofEventArgs & args)
                 }
                 else
                 {
+                    if(bLog){
+                        ofLogNotice("ofxHapPlayer::update") << hapResultToString(hapResult);
+                    }
                     _decodedFrame.invalidate();
                 }
                 av_packet_free(&packet);
+            }else{
+                if(bLog){
+                    ofLogNotice("ofxHapPlayer::update") << "frame not found";
+                }
             }
         }
     }

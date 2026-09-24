@@ -82,6 +82,7 @@ public:
     virtual bool                load(std::string name) override;
     virtual void                close() override;
     virtual void                update() override;
+    void update(bool bLog);
     
     virtual void                play() override;
     virtual void                stop() override;
