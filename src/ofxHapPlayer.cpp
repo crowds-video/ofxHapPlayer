@@ -169,7 +169,9 @@ ofxHapPlayer::ofxHapPlayer() :
     _positionOnLoad(0.0)
 {
     _clock.setPausedAt(true, 0);
+#ifndef OFX_HAP_NO_UPDATE_LISTENER
     ofAddListener(ofEvents().update, this, &ofxHapPlayer::update);
+#endif
 }
 
 ofxHapPlayer::~ofxHapPlayer()
@@ -178,7 +180,9 @@ ofxHapPlayer::~ofxHapPlayer()
     Close any loaded movie
     */
     close();
+#ifndef OFX_HAP_NO_UPDATE_LISTENER
     ofRemoveListener(ofEvents().update, this, &ofxHapPlayer::update);
+#endif
 }
 
 bool ofxHapPlayer::load(string name)

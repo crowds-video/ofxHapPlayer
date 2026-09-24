@@ -53,6 +53,8 @@
  */
 #define OFX_HAP_NO_AUDIO
 
+#define OFX_HAP_NO_UPDATE_LISTENER
+
 namespace ofxHap {
 #if !defined(OFX_HAP_NO_AUDIO)
     class AudioThread;
